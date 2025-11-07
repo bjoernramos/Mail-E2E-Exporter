@@ -1,0 +1,58 @@
+exporter:
+  listen_addr: 0.0.0.0
+  listen_port: 9782
+  check_interval_seconds: 300
+  receive_poll_seconds: 5
+  receive_timeout_seconds: 120
+  delete_testmail_after_verify: true
+  subject_prefix: "[MAIL-E2E]"
+  # Optional: Prefix für alle Prometheus-Metriken. Default ist "mail_".
+  # Beispiel: "mail_e2e_" oder "custom_mail_" oder leer "" für keinen Prefix
+  metrics_prefix: "mail_e2e_exporter_"
+
+accounts:
+  # Example accounts (fill passwords via environment variables referenced here or inline for local tests)
+  custommaildomain:
+    smtp:
+      host: smtp.example.com
+      port: 587
+      starttls: true
+      username: ${CUSTOMMAILDOMAIN_SMTP_USER}
+      password: ${CUSTOMMAILDOMAIN_SMTP_PASS}
+    imap:
+      host: imap.example.com
+      port: 993
+      ssl: true
+      username: ${CUSTOMMAILDOMAIN_IMAP_USER}
+      password: ${CUSTOMMAILDOMAIN_IMAP_PASS}
+      folder: INBOX
+  gmail_ext:
+    smtp:
+      host: smtp.gmail.com
+      port: 587
+      starttls: true
+      username: ${GMAIL_APP_USER}
+      password: ${GMAIL_APP_PASSWORD}
+    imap:
+      host: imap.gmail.com
+      port: 993
+      ssl: true
+      username: ${GMAIL_APP_USER}
+      password: ${GMAIL_APP_PASSWORD}
+      folder: INBOX
+      # Optional: zusätzliche Ordner, die durchsucht werden sollen (z. B. falls Provider Mails verschiebt)
+      # extra_folders:
+      #   - "[Gmail]/All Mail"
+      #   - "[Gmail]/Spam"
+
+# Define E2E test routes
+tests:
+  - name: custommaildomain->custommaildomain
+    from: custommaildomain
+    to: custommaildomain
+  - name: custommaildomain->gmail
+    from: custommaildomain
+    to: gmail_ext
+  - name: gmail->custommaildomain
+    from: gmail_ext
+    to: custommaildomain
