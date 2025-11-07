@@ -183,7 +183,6 @@ Import in Grafana:
 ## Links
 - [DockerHub](https://hub.docker.com/r/bjoernramos/mail-e2e-exporter)
 - [GitHub](https://github.com/bjoernramos/Mail-E2E-Exporter)
-- [Read the Docs]()
 - [Twitter](https://x.com/bjoern_rms)
 - [Gravatar](https://gravatar.com/blueada89f5864b)
 - [BlueSky](https://bsky.app/profile/bjoernramos.bsky.social)
