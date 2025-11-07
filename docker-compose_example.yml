@@ -1,9 +1,9 @@
 services:
   mail-e2e-exporter:
-    build: ./mail-e2e-exporter
+    build: ./
     container_name: mail-e2e-exporter
     env_file:
-      - ./mail-e2e-exporter/.env
+      - .env
     restart: unless-stopped
     ports:
       - "${MAIL_E2E_EXPORTER_PORT:-9782}:9782"
