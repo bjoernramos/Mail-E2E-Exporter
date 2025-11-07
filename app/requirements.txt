@@ -1,0 +1,7 @@
+fastapi==0.115.0
+uvicorn==0.30.6
+prometheus-client==0.20.0
+PyYAML==6.0.2
+python-dotenv==1.0.1
+aiosmtplib==3.0.2
+IMAPClient==3.0.1
