@@ -1,3 +1,7 @@
+![License: CC BY-NC 4.0](https://img.shields.io/badge/license-CC--BY--NC--4.0-blue) ![GitHub Stars](https://img.shields.io/github/stars/bjoernramos/Mail-E2E-Exporter?style=social)
+
+![Docker Pulls](https://img.shields.io/docker/pulls/bjoernramos/mail-e2e-exporter)
+
 # Mail E2E Exporter
 
 A Prometheus-compatible exporter that continuously verifies real end-to-end email delivery: send via SMTP and receive via IMAP. For every configured route a test mail is sent with a unique token in the subject; the exporter polls the inbox, measures round-trip latency, and exposes results as Prometheus metrics.
