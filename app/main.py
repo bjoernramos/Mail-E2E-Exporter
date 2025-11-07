@@ -408,6 +408,112 @@ def version_endpoint(_=Depends(require_api_key)):
     return {"app": APP_VERSION, "revision": GIT_SHA, "build_date": BUILD_DATE}
 
 
+def _collect_metric_samples(name: str) -> List[Dict[str, Any]]:
+    """Collect samples for a given metric name. For Counters, this function
+    also tries name+"_total" as the python client may append the suffix.
+    Returns list of dicts with keys: labels (dict) and value (float).
+    """
+    families = list(registry.collect())
+    target_names = {name, f"{name}_total"}
+    for fam in families:
+        if fam.name in target_names:
+            out = []
+            for s in fam.samples:
+                # Skip automatically added *_created samples
+                if s.name.endswith("_created"):
+                    continue
+                out.append({"labels": dict(s.labels), "value": float(s.value)})
+            return out
+    return []
+
+
+@app.get("/errors")
+def errors_endpoint(_=Depends(require_api_key)):
+    """Return a structured JSON view of current error counters and last states,
+    grouped by route/from/to. This does not persist history; it reads current
+    metric values from the in-process registry.
+    """
+    # Metric base names (without automatic suffixes)
+    name_send_ok = f"{METRICS_PREFIX}send_success"
+    name_recv_ok = f"{METRICS_PREFIX}receive_success"
+    name_roundtrip = f"{METRICS_PREFIX}roundtrip_seconds"
+    name_last_send = f"{METRICS_PREFIX}last_send_timestamp"
+    name_last_recv = f"{METRICS_PREFIX}last_receive_timestamp"
+    name_errors = f"{METRICS_PREFIX}test_errors_total"
+    name_last_error = f"{METRICS_PREFIX}last_error_info"
+    name_test_info = f"{METRICS_PREFIX}test_info"
+
+    samples_test_info = _collect_metric_samples(name_test_info)
+    samples_send_ok = _collect_metric_samples(name_send_ok)
+    samples_recv_ok = _collect_metric_samples(name_recv_ok)
+    samples_roundtrip = _collect_metric_samples(name_roundtrip)
+    samples_last_send = _collect_metric_samples(name_last_send)
+    samples_last_recv = _collect_metric_samples(name_last_recv)
+    samples_last_error = _collect_metric_samples(name_last_error)
+    samples_errors = _collect_metric_samples(name_errors)
+
+    # Build key set of (route, from, to)
+    def key_of(lbls: Dict[str, str]):
+        return (lbls.get("route", ""), lbls.get("from", ""), lbls.get("to", ""))
+
+    keys = set()
+    for smp in (samples_test_info + samples_send_ok + samples_recv_ok + samples_roundtrip + samples_last_send + samples_last_recv + samples_last_error + samples_errors):
+        keys.add(key_of(smp["labels"]))
+
+    # Index helpers
+    def index_by_key(samples: List[Dict[str, Any]]):
+        d: Dict[tuple, float] = {}
+        for s in samples:
+            d[key_of(s["labels"])] = s["value"]
+        return d
+
+    send_ok_map = index_by_key(samples_send_ok)
+    recv_ok_map = index_by_key(samples_recv_ok)
+    roundtrip_map = index_by_key(samples_roundtrip)
+    last_send_map = index_by_key(samples_last_send)
+    last_recv_map = index_by_key(samples_last_recv)
+    last_error_map = index_by_key(samples_last_error)
+
+    # Errors need step dimension
+    errors_by_key_step: Dict[tuple, Dict[str, float]] = {}
+    for s in samples_errors:
+        k = key_of(s["labels"])  # route/from/to
+        step = s["labels"].get("step", "unknown")
+        errors_by_key_step.setdefault(k, {})[step] = s["value"]
+
+    # Assemble response list
+    items = []
+    for route, frm, to in sorted(keys):
+        steps = errors_by_key_step.get((route, frm, to), {})
+        items.append({
+            "route": route,
+            "from": frm,
+            "to": to,
+            "send_ok": int(send_ok_map.get((route, frm, to), 0)) if not (send_ok_map.get((route, frm, to)) is None) else None,
+            "receive_ok": int(recv_ok_map.get((route, frm, to), 0)) if not (recv_ok_map.get((route, frm, to)) is None) else None,
+            "roundtrip_seconds": roundtrip_map.get((route, frm, to)),
+            "last_send_ts": last_send_map.get((route, frm, to)),
+            "last_receive_ts": last_recv_map.get((route, frm, to)),
+            "last_error_hash": last_error_map.get((route, frm, to)),
+            "errors": {
+                "config": steps.get("config", 0),
+                "send": steps.get("send", 0),
+                "receive": steps.get("receive", 0),
+                "other": sum(v for st, v in steps.items() if st not in {"config", "send", "receive"}),
+                "total": sum(steps.values()) if steps else 0,
+            },
+        })
+
+    # Simple summary
+    summary = {
+        "routes": len(keys),
+        "total_errors": sum(it["errors"]["total"] for it in items),
+        "timestamp": int(time.time()),
+    }
+
+    return JSONResponse({"summary": summary, "items": items})
+
+
 @app.post("/reload")
 def reload_config(_=Depends(require_api_key)):
     reloaded = _reload_config_if_changed(force=True)
