@@ -11,7 +11,10 @@ WORKDIR /app
 # System deps (IMAP/SSL, timezone, locales minimal)
 RUN apt-get update -y && apt-get install -y --no-install-recommends \
     tzdata ca-certificates \
+    && apt-get upgrade -y \
     && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --upgrade pip>=25.3
 
 COPY app/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
