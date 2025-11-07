@@ -1,0 +1,315 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "description": "Prometheus datasource",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    }
+  ],
+  "__requires": [
+    { "type": "grafana", "id": "grafana", "name": "Grafana", "version": "10.4.0" },
+    { "type": "panel", "id": "stat", "name": "Stat", "version": "8.5.0" },
+    { "type": "panel", "id": "timeseries", "name": "Time series", "version": "8.5.0" },
+    { "type": "panel", "id": "table", "name": "Table", "version": "8.5.0" },
+    { "type": "datasource", "id": "prometheus", "name": "Prometheus", "version": "1.0.0" }
+  ],
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "type": "row",
+      "title": "Mail E2E – Overview",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }
+    },
+    {
+      "id": 10,
+      "type": "stat",
+      "title": "Route: $route — Status",
+      "description": "Ampel: 2 = OK (grün), 1 = Stale (gelb), 0 = Fehler (rot). OK wenn Send & Receive = 1. Stale, wenn seit letztem Timestamp > $stale_minutes Minuten.",
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 1 },
+      "pluginVersion": "10.4.0",
+      "repeat": "route",
+      "repeatDirection": "h",
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "value",
+        "wideLayout": true
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "FAIL" }, "1": { "text": "STALE" }, "2": { "text": "OK" } } }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 0.5 },
+              { "color": "green", "value": 1.5 }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(mail_e2e_exporter_send_success{route=\"$route\"} * mail_e2e_exporter_receive_success{route=\"$route\"}) * (2 - ((time() - max without(__name__) ({__name__=~\"mail_e2e_exporter_last_(send|receive)_timestamp\",route=\"$route\"})) > ($stale_minutes * 60)))",
+          "legendFormat": "{{route}}",
+          "interval": ""
+        }
+      ]
+    },
+
+    {
+      "type": "row",
+      "title": "Trends (alle ausgewählten Routen)",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 7 }
+    },
+    {
+      "id": 20,
+      "type": "timeseries",
+      "title": "Send/Receive Success (0/1)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "pluginVersion": "10.4.0",
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "drawStyle": "line", "lineWidth": 2, "spanNulls": true, "pointSize": 2 },
+          "min": -0.1,
+          "max": 1.1
+        },
+        "overrides": []
+      },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        { "refId": "A", "expr": "mail_e2e_exporter_send_success{route=~\"$route\"}", "legendFormat": "send {{route}}" },
+        { "refId": "B", "expr": "mail_e2e_exporter_receive_success{route=~\"$route\"}", "legendFormat": "recv {{route}}" }
+      ]
+    },
+    {
+      "id": 21,
+      "type": "timeseries",
+      "title": "Roundtrip (s)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "pluginVersion": "10.4.0",
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": { "drawStyle": "line", "lineWidth": 2, "spanNulls": true, "pointSize": 2 }
+        },
+        "overrides": []
+      },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        { "refId": "A", "expr": "mail_e2e_exporter_roundtrip_seconds{route=~\"$route\"}", "legendFormat": "{{route}}" }
+      ]
+    },
+    {
+      "id": 22,
+      "type": "timeseries",
+      "title": "Fehler (increase pro $__rate_interval)",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 16 },
+      "pluginVersion": "10.4.0",
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        { "refId": "A", "expr": "sum by (route, step) (increase(mail_e2e_exporter_test_errors_total{route=~\"$route\"}[$__rate_interval]))", "legendFormat": "{{route}} {{step}}" }
+      ]
+    },
+
+    { "type": "row", "title": "Details pro Route", "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 24 }, "repeat": "route" },
+
+    {
+      "id": 30,
+      "type": "stat",
+      "title": "Send Success",
+      "gridPos": { "h": 4, "w": 3, "x": 0, "y": 25 },
+      "pluginVersion": "10.4.0",
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "/^.+$/", "values": false }, "colorMode": "value", "graphMode": "none", "justifyMode": "center" },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [ { "type": "value", "options": { "0": { "text": "FAIL" }, "1": { "text": "OK" } } } ],
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "green", "value": 0.5 } ] }
+        },
+        "overrides": []
+      },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [ { "refId": "A", "expr": "mail_e2e_exporter_send_success{route=\"$route\"}", "legendFormat": "send" } ]
+    },
+    {
+      "id": 31,
+      "type": "stat",
+      "title": "Receive Success",
+      "gridPos": { "h": 4, "w": 3, "x": 3, "y": 25 },
+      "pluginVersion": "10.4.0",
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "/^.+$/", "values": false }, "colorMode": "value", "graphMode": "none", "justifyMode": "center" },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [ { "type": "value", "options": { "0": { "text": "FAIL" }, "1": { "text": "OK" } } } ],
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "green", "value": 0.5 } ] }
+        },
+        "overrides": []
+      },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [ { "refId": "A", "expr": "mail_e2e_exporter_receive_success{route=\"$route\"}", "legendFormat": "recv" } ]
+    },
+    {
+      "id": 32,
+      "type": "stat",
+      "title": "Roundtrip (letzter)",
+      "gridPos": { "h": 4, "w": 4, "x": 6, "y": 25 },
+      "pluginVersion": "10.4.0",
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "/^.+$/", "values": false }, "colorMode": "value", "graphMode": "none", "justifyMode": "auto" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [ { "refId": "A", "expr": "mail_e2e_exporter_roundtrip_seconds{route=\"$route\"}", "legendFormat": "roundtrip" } ]
+    },
+    {
+      "id": 33,
+      "type": "stat",
+      "title": "Seit letztem Send (s)",
+      "gridPos": { "h": 4, "w": 4, "x": 10, "y": 25 },
+      "pluginVersion": "10.4.0",
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "/^.+$/", "values": false }, "colorMode": "value", "graphMode": "none", "justifyMode": "auto" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [ { "refId": "A", "expr": "time() - mail_e2e_exporter_last_send_timestamp{route=\"$route\"}", "legendFormat": "since send" } ]
+    },
+    {
+      "id": 34,
+      "type": "stat",
+      "title": "Seit letztem Receive (s)",
+      "gridPos": { "h": 4, "w": 4, "x": 14, "y": 25 },
+      "pluginVersion": "10.4.0",
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "/^.+$/", "values": false }, "colorMode": "value", "graphMode": "none", "justifyMode": "auto" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [ { "refId": "A", "expr": "time() - mail_e2e_exporter_last_receive_timestamp{route=\"$route\"}", "legendFormat": "since recv" } ]
+    },
+    {
+      "id": 35,
+      "type": "timeseries",
+      "title": "Erfolg (0/1) — Route $route",
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 29 },
+      "pluginVersion": "10.4.0",
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "none" } },
+      "fieldConfig": { "defaults": { "min": -0.1, "max": 1.1 }, "overrides": [] },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        { "refId": "A", "expr": "mail_e2e_exporter_send_success{route=\"$route\"}", "legendFormat": "send" },
+        { "refId": "B", "expr": "mail_e2e_exporter_receive_success{route=\"$route\"}", "legendFormat": "recv" }
+      ]
+    },
+    {
+      "id": 36,
+      "type": "timeseries",
+      "title": "Roundtrip (s) — Route $route",
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 29 },
+      "pluginVersion": "10.4.0",
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "none" } },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [ { "refId": "A", "expr": "mail_e2e_exporter_roundtrip_seconds{route=\"$route\"}", "legendFormat": "roundtrip" } ]
+    },
+    {
+      "id": 37,
+      "type": "timeseries",
+      "title": "Fehler nach Step — Route $route",
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 36 },
+      "pluginVersion": "10.4.0",
+      "options": { "legend": { "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "none" } },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [ { "refId": "A", "expr": "sum by (step) (increase(mail_e2e_exporter_test_errors_total{route=\"$route\"}[$__rate_interval]))", "legendFormat": "{{step}}" } ]
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["mail", "e2e", "exporter", "smtp", "imap"],
+  "templating": {
+    "list": [
+      {
+        "name": "DS_PROMETHEUS",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {},
+        "hide": 0
+      },
+      {
+        "name": "route",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+        "query": "label_values(mail_e2e_exporter_send_success, route)",
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "hide": 0,
+        "sort": 1,
+        "current": {},
+        "options": []
+      },
+      {
+        "name": "stale_minutes",
+        "type": "constant",
+        "query": "15",
+        "label": "Stale nach (Minuten)",
+        "hide": 0
+      }
+    ]
+  },
+  "time": { "from": "now-24h", "to": "now" },
+  "timepicker": {
+    "refresh_intervals": [
+      "5s", "10s", "30s",
+      "1m", "5m", "15m", "30m",
+      "1h", "2h", "6h", "12h", "24h"
+    ],
+    "time_options": ["5m", "15m", "1h", "6h", "12h", "24h", "7d", "30d"]
+  },
+  "timezone": "",
+  "title": "Mail E2E Exporter — All-in-one",
+  "uid": null,
+  "version": 1,
+  "weekStart": ""
+}

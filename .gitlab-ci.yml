@@ -1,0 +1,55 @@
+variables:
+  GIT_DEPTH: 1
+  GIT_CLONE_PATH: $CI_BUILDS_DIR/$CI_PROJECT_PATH/$CI_ENVIRONMENT_SLUG
+  GIT_CLEAN_FLAGS: -ffdx -e .env -e config.yaml -e docker-compose.yml -e docker-compose.yaml
+
+stages:
+  - prepare
+  - build
+  - down
+  - up
+
+# 🛠️ 1️⃣ Vorbereitung: SSH-Tools installieren
+prepare-job:
+  stage: prepare
+  before_script:
+    - "echo SHELL: $SHELL"
+    - "echo 0: $0"
+    - "ps -o comm= -p $$"  # zeigt, welcher Shell-Prozess läuft
+  script:
+    - whoami
+    - echo $HOME
+  only:
+    - main
+    - master
+
+# 🔐 2️⃣ SSH-Konfiguration vorbereiten
+build-job:
+  stage: build
+  needs: ["prepare-job"]
+  script:
+    - docker compose build
+    #- docker compose build --no-cache
+  only:
+    - main
+    - master
+
+# 🔄 3️⃣ Dateien synchronisieren (Deploy)
+down-job:
+  stage: down
+  needs: ["build-job"]
+  script:
+    - docker compose down
+  only:
+    - main
+    - master
+
+# ✅ 4️⃣ Nachprüfung (optional, sehr empfehlenswert)
+up-job:
+  stage: up
+  needs: ["down-job"]
+  script:
+    - docker compose up -d
+  only:
+    - main
+    - master

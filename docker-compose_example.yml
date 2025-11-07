@@ -1,0 +1,22 @@
+services:
+  mail-e2e-exporter:
+    build: ./
+    container_name: mail-e2e-exporter
+    env_file:
+      - .env
+    restart: unless-stopped
+    ports:
+      - "${MAIL_E2E_EXPORTER_PORT:-9782}:9782"
+    networks:
+      - monitoring
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+
+
+networks:
+  monitoring:
+    external: true
+    name: monitoring_monitoring
+
+volumes:
+  mariadb_data: {}
