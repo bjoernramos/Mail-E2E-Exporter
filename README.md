@@ -91,7 +91,8 @@ Gmail specifics: the IMAP search will try common Gmail labels (All Mail/Spam/Imp
 
 ## Endpoints and authentication
 - GET /health — returns {status: ok, time: <unix>}; requires API_KEY if set
-- GET /info — config introspection; requires API_KEY if set
+- GET /info — config introspection and version metadata; requires API_KEY if set
+- GET /version — returns version metadata only; requires API_KEY if set
 - GET /metrics — Prometheus metrics; can be protected with Basic Auth via METRICS_USER/METRICS_PASS
 - POST /reload — force config reload; requires API_KEY if set
 
@@ -137,6 +138,7 @@ Assuming metrics_prefix = "mail_" (default). All core series have labels route, 
 - mail_last_receive_timestamp{route,from,to}
 - mail_test_errors_total{route,from,to,step}
 - mail_last_error_info{route,from,to}
+- mail_build_info{version,revision,build_date} = 1  # version/build metadata exposed for observability
 
 Config and mapping gauges:
 - mail_test_info{route,from,to} = 1 (maps configured tests)
