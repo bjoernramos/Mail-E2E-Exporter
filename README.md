@@ -1,228 +1,178 @@
 # Mail E2E Exporter
 
-Ein Prometheus‑kompatibler Exporter, der den realen E2E‑Pfad von E‑Mails überwacht: Versand per SMTP und Empfang per IMAP. Für jede Route wird eine Test‑Mail mit Token im Betreff verschickt, der Eingang wird gesucht, die Roundtrip‑Zeit gemessen und als Metriken exponiert.
+A Prometheus-compatible exporter that continuously verifies real end-to-end email delivery: send via SMTP and receive via IMAP. For every configured route a test mail is sent with a unique token in the subject; the exporter polls the inbox, measures round-trip latency, and exposes results as Prometheus metrics.
 
-## Systemanforderungen
-- Docker und Docker Compose v2
-- Ausgehender Zugriff vom Container auf die Mail‑Provider (SMTP/IMAP‑Ports)
-- Optional: Prometheus (zum Scrapen der Metriken) und Grafana (Visualisierung)
-- Für Gmail: App‑Passwort und IMAP aktiviert
+- Protocols: SMTP (send), IMAP (receive)
+- Targets: any provider with SMTP/IMAP (e.g., Gmail, custom domains)
+- Metrics: success flags, round-trip seconds, last timestamps, error counters, and config gauges
 
-## Installation (Quick Start)
+## Requirements
+- Docker and Docker Compose v2
+- Outbound network access to your mail providers (SMTP/IMAP ports) from the container
+- Optional: Prometheus (to scrape metrics) and Grafana (for visualization)
+- For Gmail: IMAP enabled and an app password
 
-### 1) Projekt klonen und env anlegen
-
-   ```
-    cp .env.example .env
-   ```
-
-   - `METRICS_USER/METRICS_PASS` setzen (für geschützte /metrics)
-   - Optional: `API_KEY` setzen (für /reload und zukünftige Endpunkte)
-
-
-### 2) Konfiguration vorbereiten
+## Quick start (Docker Compose)
+1) Copy environment and config templates
 
    ```
+   cp .env.example .env
    cp config.example.yaml config.yaml
    ```
-   - Accounts (SMTP/IMAP) und Tests anpassen
-   - Passwörter per Env‑Var referenzieren, z. B. ${CUSTOMDOMAIN_TEST_IMAP_PASS}
 
-### 3) Container starten (im Repo‑Root)
+   - Set METRICS_USER/METRICS_PASS to protect /metrics (optional but recommended)
+   - Optionally set API_KEY to protect /health, /info, /reload
+   - Edit config.yaml: define accounts and tests. Prefer referencing secrets via env vars, e.g. ${CUSTOMDOMAIN_TEST_IMAP_PASS}
 
+2) Start the service (from repo root)
+
+   ```
    docker compose up -d --build mail-e2e-exporter
+   ```
 
-### 4) Funktion testen
+   - The app listens on 0.0.0.0:9782 inside the container; host port is ${MAIL_E2E_EXPORTER_PORT:-9782}
+
+3) Smoketest the endpoints
 
    - Health
-      ```
+     ```
      curl -s http://localhost:9782/health | jq .
-        ```
-
-   - Info zur geladenen Konfiguration
-   curl -s http://localhost:9782/info | jq .
-
-   - Metriken (mit Basic Auth, wenn gesetzt)
-      ```
+     ```
+   - Info (shows config state and discovered tests)
+     ```
+     curl -s http://localhost:9782/info | jq .
+     ```
+   - Metrics (with Basic Auth if configured)
+     ```
      curl -s -u "$METRICS_USER:$METRICS_PASS" http://localhost:9782/metrics | head -n 30
-        ```
-
-### 5) Konfigurations‑Reload (optional, wenn config.yaml geändert wurde)
-
-   - Falls API_KEY gesetzt ist
-      ```
-     curl -s -X POST -H "X-API-Key: $API_KEY" http://localhost:9782/reload | jq .
-        ```
-
-> Hinweis: In `docker-compose.yml` ist `mail-e2e-exporter/config.yaml` schreibgeschützt nach `/app/config.yaml` gemountet. Änderungen auf dem Host greifen automatisch im nächsten Testzyklus oder sofort nach `/reload`.
-
-## Prometheus‑Integration
-Der Exporter liefert seine Metriken unter `/metrics` im Prometheus‑Format aus.
-
-### Ziel im gemeinsamen Docker‑Netz:
-
-      scrape_configs:
-        - job_name: 'mail-e2e-exporter'
-          static_configs:
-            - targets: ['mail-e2e-exporter:9782']
-
-### Ziel via Host‑Port (lokal):
-
-      scrape_configs:
-        - job_name: 'mail-e2e-exporter-local'
-          static_configs:
-            - targets: ['localhost:9782']
-
-### Mit Basic Auth (empfohlen, wenn Port extern erreichbar ist):
-
-        scrape_configs:
-            - job_name: 'mail-e2e-exporter-secure'
-              static_configs:
-                - targets: ['mail-e2e-exporter:9782']
-              basic_auth:
-                username: '${METRICS_USER}'
-                password: '${METRICS_PASS}'
-
-
-### Über Nginx/Reverse Proxy (Beispiel):
-  - Nginx Upstream auf `mail-e2e-exporter:9782` legen und Location `/metrics` schützen.
-    - Prometheus dann auf `prometheus_targets: ['exporter.domain.tld/metrics']` via `metrics_path: /metrics` scrapen.
-
-          scrape_configs:
-            - job_name: 'mail-e2e-exporter-proxy'
-              metrics_path: /metrics
-              static_configs:
-                - targets: ['exporter.domain.tld']
-
-### Beispiel‑PromQL und Alerting:
-- Roundtrip Zeit pro Route: `mail_e2e_exporter_roundtrip_seconds{route!=""}`
-- Empfangsfehler: `increase(mail_e2e_exporter_test_errors_total{step="receive"}[10m]) > 0`
-- Alert (Einfach):
-
-  - alert: MailRouteFailed
-    expr: mail_e2e_exporter_receive_success == 0
-    for: 10m
-    labels:
-      severity: critical
-    annotations:
-      summary: "Mail route failed"
-      description: "Mailtest {{ $labels.route }} konnte nicht erfolgreich empfangen werden."
-
-## Konfiguration
-- `.env` (siehe `../.env.example`)
-  - METRICS_USER / METRICS_PASS: Basic Auth für `/metrics`
-  - API_KEY: Optionaler API‑Key für geschützte Endpunkte (z. B. /reload)
-  - CONFIG_PATH: Pfad zur YAML‑Konfiguration (Default `/app/config.yaml`)
-  - WRITE_EXAMPLE_CONFIG: `true|false` – erzeugt beim ersten Start eine Beispiel‑`config.yaml`
-  - DEBUG: `true|false` – detaillierte SMTP/IMAP‑Logs in den Docker‑Logs
-- `config.yaml` (siehe `../config.example.yaml`)
-  - exporter: Ports, Intervalle, Präfixe
-    - metrics_prefix: Prefix für alle Prometheus-Metriken (Default: "mail_"). Änderung erfordert Neustart des Containers.
-  - accounts: SMTP/IMAP‑Zugänge (Passwörter via Env‑Vars referenzieren)
-  - tests: Liste der Routen (from/to Account‑Keys)
-
-### Live‑Reload der Konfiguration
-- Automatischer Reload bei Datei‑Änderung (zu Beginn jedes Testzyklus)
-- Manuell: `POST /reload` (mit gültigem API_KEY)
-- Diagnose: `GET /info` zeigt Pfad, mtime_ns, Größe und erkannte Tests
-
-## Exponierte Metriken (Auszug)
-Hinweis: Alle Kernmetriken sind ab v0.2.1 zusätzlich mit Labels `from` und `to` versehen, damit die zugrunde liegenden Accounts pro Test sichtbar sind.
-
-- mail_e2e_exporter_send_success{route,from,to}
-- mail_e2e_exporter_receive_success{route,from,to}
-- mail_e2e_exporter_roundtrip_seconds{route,from,to}
-- mail_e2e_exporter_last_send_timestamp{route,from,to}
-- mail_e2e_exporter_last_receive_timestamp{route,from,to}
-- mail_e2e_exporter_test_errors_total{route,from,to,step}
-- mail_e2e_exporter_last_error_info{route,from,to}
-
-Zusätzliche Config- und Info‑Metriken:
-- mail_e2e_exporter_test_info{route,from,to} = 1 (Mapping der konfigurierten Tests)
-- mail_e2e_exporter_config_delete_testmail_after_verify 0|1
-- mail_e2e_exporter_config_receive_timeout_seconds
-- mail_e2e_exporter_config_receive_poll_seconds
-- mail_e2e_exporter_config_check_interval_seconds
-
-Weitere (optional, falls aktiviert):
-- mail_e2e_exporter_consecutive_failures{route,phase}
-- mail_e2e_exporter_mx_records_total{route}
-- mail_e2e_exporter_tls_cert_expiry_days_remaining{route,endpoint}
-- mail_e2e_exporter_queue_depth{type}
-
-## Tests & Diagnose (Copy‑Paste)
-- Docker‑Logs (laufend):
-   ```
-  docker compose logs -f mail-e2e-exporter
-   ```
-- Einmalige letzte 200 Zeilen:
-   ```
-  docker compose logs --tail 200 mail-e2e-exporter
-   ```
-- Manuelle Abfrage der wichtigsten Endpunkte:
-   ```
-  curl -s http://localhost:9782/health | jq .
      ```
-     ```
-  curl -s http://localhost:9782/info | jq .
-     ```
-     ```
-  curl -s -u "$METRICS_USER:$METRICS_PASS" http://localhost:9782/metrics | head -n 30
+
+4) Reload config on demand (if API_KEY is set)
+
    ```
-## Sicherheit
-- `/metrics` kann per Basic Auth geschützt werden (env: METRICS_USER/METRICS_PASS)
-- Rate Limits und IP‑Filter am Reverse Proxy empfohlen
+   curl -s -X POST -H "X-API-Key: $API_KEY" http://localhost:9782/reload | jq .
+   ```
+
+Note: docker-compose.yaml mounts ./config.yaml read-only to /app/config.yaml. File changes on the host are picked up automatically at the next background cycle, or immediately after /reload.
+
+## Configuration
+
+- Config file path: /app/config.yaml (override with CONFIG_PATH)
+- Hot reload: the file mtime is checked every background cycle; POST /reload forces an immediate reload (requires API_KEY)
+- Defaults live in app/main.py (DEFAULTS). Config shallow-merges on top of these defaults.
+
+### Environment variables (.env)
+- METRICS_USER, METRICS_PASS: optional HTTP Basic auth for /metrics
+- API_KEY: optional API key protecting /health, /info, /reload
+- CONFIG_PATH: path to YAML config (default /app/config.yaml)
+- WRITE_EXAMPLE_CONFIG: true|false — write an example config.yaml at first start (not used in production)
+- DEBUG: true|false — verbose logs (SMTP/IMAP details) to stdout
+
+### YAML config (config.yaml)
+- exporter
+  - listen_addr: default 0.0.0.0
+  - listen_port: default 9782 (container internal)
+  - check_interval_seconds: sleep between test cycles (default 300)
+  - receive_timeout_seconds: IMAP search timeout per cycle
+  - receive_poll_seconds: IMAP poll interval while waiting
+  - delete_testmail_after_verify: delete matched messages after verification (default true)
+  - subject_prefix: subject prefix for outbound test messages (default "[MAIL-E2E]")
+  - metrics_prefix: prefix for Prometheus metric names (default "mail_"). IMPORTANT: the registry and names are created at import time; adjust before app import/container start.
+- accounts: map of logical account keys. For each key provide smtp and/or imap blocks. Values support environment expansion ($VAR or ${VAR}).
+  - smtp: host, port, starttls (default true), username, password
+  - imap: host, port, ssl (default true), username, password, folder (default INBOX), extra_folders (string or list)
+- tests: list of routes, each with name (optional), from (account key), to (account key)
+
+Gmail specifics: the IMAP search will try common Gmail labels (All Mail/Spam/Important in EN/DE variants) and prefers X-GM-RAW when available. You can also add imap.extra_folders for custom labels and adjust receive_timeout_seconds if needed.
+
+## Endpoints and authentication
+- GET /health — returns {status: ok, time: <unix>}; requires API_KEY if set
+- GET /info — config introspection; requires API_KEY if set
+- GET /metrics — Prometheus metrics; can be protected with Basic Auth via METRICS_USER/METRICS_PASS
+- POST /reload — force config reload; requires API_KEY if set
+
+## Prometheus integration
+Scrape /metrics from Prometheus. Examples:
+
+- Same Docker network
+  ```yaml
+  scrape_configs:
+    - job_name: 'mail-e2e-exporter'
+      static_configs:
+        - targets: ['mail-e2e-exporter:9782']
+  ```
+
+- Via host port (local)
+  ```yaml
+  scrape_configs:
+    - job_name: 'mail-e2e-exporter-local'
+      static_configs:
+        - targets: ['localhost:9782']
+  ```
+
+- With Basic Auth
+  ```yaml
+  scrape_configs:
+    - job_name: 'mail-e2e-exporter-secure'
+      static_configs:
+        - targets: ['mail-e2e-exporter:9782']
+      basic_auth:
+        username: '${METRICS_USER}'
+        password: '${METRICS_PASS}'
+  ```
+
+Reverse proxy: place an upstream to mail-e2e-exporter:9782 and protect /metrics; set metrics_path: /metrics in Prometheus if scraping via hostname.
+
+## Exposed metrics
+Assuming metrics_prefix = "mail_" (default). All core series have labels route, from, to. The error counter also has label step in {send, receive, config}.
+
+- mail_send_success{route,from,to}
+- mail_receive_success{route,from,to}
+- mail_roundtrip_seconds{route,from,to}
+- mail_last_send_timestamp{route,from,to}
+- mail_last_receive_timestamp{route,from,to}
+- mail_test_errors_total{route,from,to,step}
+- mail_last_error_info{route,from,to}
+
+Config and mapping gauges:
+- mail_test_info{route,from,to} = 1 (maps configured tests)
+- mail_config_delete_testmail_after_verify
+- mail_config_receive_timeout_seconds
+- mail_config_receive_poll_seconds
+- mail_config_check_interval_seconds
+
+Note: The actual metric names will use whatever exporter.metrics_prefix is set to at import time (can be "" for no prefix).
 
 ## Troubleshooting
-- IMAP: [AUTHENTICATIONFAILED] Authentication failed.
-  - Bedeutet: IMAP‑Login fehlgeschlagen (Benutzer/Passwort falsch/leer oder App‑Passwort nötig)
-  - Häufig: In `config.yaml` ist `${VAR}` referenziert, aber die Env‑Variable fehlt. Beispiel: `password: ${BRAMOS_TEST_IMAP_PASS}` → in `.env` setzen
-  - Abhilfe: `.env` ergänzen → Container neu starten oder `POST /reload` mit API_KEY
-  - Mit `DEBUG=true` erscheinen detaillierte Hinweise mit Account/Host und Env‑Key
+- IMAP AUTHENTICATIONFAILED
+  - IMAP login failed (wrong/empty credentials or app password required)
+  - Often caused by unresolved env vars in config.yaml, e.g. password: ${BRAMOS_TEST_IMAP_PASS}. Define it in .env (or environment) and restart the container or call POST /reload with API_KEY.
+  - Set DEBUG=true for detailed hints (account/host and missing env var key)
 
-- Gmail: Mail versendet, aber nicht im INBOX gefunden (Timeout)
-  - Gmail nutzt Labels statt echte Ordner. Der Exporter durchsucht automatisch typische Gmail‑Ordner (All Mail/Spam, Lokalisierungen) und nutzt X‑GM‑RAW, mit Fallback auf SUBJECT‑Suche
-  - Bei Bedarf `imap.extra_folders` ergänzen und `receive_timeout_seconds` erhöhen
+- Gmail message not found (timeout)
+  - Gmail uses labels rather than folders. The exporter automatically searches common Gmail folders and uses X-GM-RAW with fallback to SUBJECT search.
+  - If needed, add imap.extra_folders and/or increase receive_timeout_seconds.
 
+- No tests configured
+  - The exporter still exposes a placeholder route (no-tests-configured) so you can see it is running, but no real mail is sent.
 
+## Grafana dashboard
+A ready-to-import dashboard JSON is provided under grafana/:
 
-## Grafana Dashboards
-Fertige Dashboard-JSONs liegen unter `mail-e2e-exporter/grafana/` und können direkt in Grafana importiert werden.
-
-- mail-e2e-all-in-one.json
-  - Ein einziges Dashboard mit allen wichtigen Visualisierungen: Send/Receive Success, Roundtrip, DNS/SMTP Latenzen (p50/p95), Reply Codes, MX-Infos, Queue-Depth und Fehlerübersicht.
-  - Zeitbereich: 24h (änderbar in Grafana)
-- mail-e2e-overview.json
-  - Übersicht über Erfolgsraten (als Stat/Bar‑Gauge), Roundtrip‑Zeiten (Time Series) und Fehler‑Tabelle
-- mail-e2e-route-detail.json
-  - Detailansicht je Route mit Variable `route` (Multi‑Select, All‑Option)
-  - Gauges für Versand/Empfang‑Erfolgsrate (24h), Roundtrip‑Zeit als Zeitreihe, Erfolg (1/0) und Fehlerdetails (7d)
-- mail-e2e-errors.json
-  - Fehlerfokus: Top fehlerhafte Routen/Schritte als Bar‑Gauge, Fehler je Route/Step als Tabelle
-  - Letzte Sende/Empfangs‑Zeitpunkte als Tabelle (ISO‑Zeit)
-- mail-e2e-slo.json
-  - SLO‑/Verfügbarkeits‑Sicht: Zeitfenster‑Variable `window` (1h…30d) und `slo` (0.99/0.995/0.999)
-  - Gesamt‑Verfügbarkeit, Burn‑Rate und pro‑Route‑Sicht sowie Roundtrip‑Durchschnitt/95‑Perzentil
+- grafana/mail-e2e-all-in-one.json — shows send/receive success, round-trip, and error overview.
 
 Import in Grafana:
-1. In Grafana: Dashboards → New → Import.
-2. JSON Datei auswählen (z. B. `mail-e2e-overview.json`).
-3. Datasource setzen: Prometheus (Variable `DS_PROMETHEUS`).
-4. Dashboard speichern.
+1. In Grafana: Dashboards → New → Import
+2. Select the JSON file
+3. Choose the Prometheus datasource
+4. Save
 
-Hinweise zu PromQL:
-- Verfügbarkeit (Empfang) über Mittelwert des 1/0‑Signals: `avg_over_time(mail_e2e_exporter_receive_success[$window])`
-- Erfolgsrate in %: `100 * avg(avg_over_time(mail_e2e_exporter_receive_success[24h]))`
-- Fehler pro Route/Step: `sum by (route, step) (increase(mail_e2e_exporter_test_errors_total[24h]))`
-- Roundtrip (Durchschnitt): `avg by (route) (avg_over_time(mail_e2e_exporter_roundtrip_seconds[$window]))`
-- DNS p95 nach Route/Type: `histogram_quantile(0.95, sum by (le, route, type) (rate(mail_e2e_exporter_dns_lookup_seconds_bucket[$__rate_interval])))`
-- SMTP Connect p95: `histogram_quantile(0.95, sum by (le, route) (rate(mail_e2e_exporter_smtp_connect_seconds_bucket[$__rate_interval])))`
-
-Sicherheit:
-- Wenn `/metrics` via Basic Auth geschützt ist, muss der Prometheus‑Datasource Benutzer/Passwort kennen (oder Zugriff via interner Netzwerkpfade erfolgen).
-
+## Docker/Compose notes
+- docker-compose.yaml attaches the container to an external network named monitoring_monitoring and mounts ./config.yaml read-only to /app/config.yaml. Ensure the network exists before bringing the stack up:
+  ```
+  docker network create monitoring_monitoring
+  ```
+- Exposed port is parameterized via MAIL_E2E_EXPORTER_PORT (defaults to 9782).
 
 ## License
-Licensed under [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/).  
-Free for private and internal (non-commercial) use.  
-Attribution required: © 2025 Bjørn Ramos.
+Licensed under CC BY-NC 4.0. Free for private and internal (non-commercial) use. Attribution required: © 2025 Bjørn Ramos.
