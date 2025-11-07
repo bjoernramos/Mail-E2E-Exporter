@@ -129,23 +129,27 @@ Scrape /metrics from Prometheus. Examples:
 Reverse proxy: place an upstream to mail-e2e-exporter:9782 and protect /metrics; set metrics_path: /metrics in Prometheus if scraping via hostname.
 
 ## Exposed metrics
-Assuming metrics_prefix = "mail_" (default). All core series have labels route, from, to. The error counter also has label step in {send, receive, config}.
+Assuming metrics_prefix = "mail_e2e_exporter_" (default). All core series have labels route, from, to. The error counter also has label step in {send, receive, config}.
 
-- mail_send_success{route,from,to}
-- mail_receive_success{route,from,to}
-- mail_roundtrip_seconds{route,from,to}
-- mail_last_send_timestamp{route,from,to}
-- mail_last_receive_timestamp{route,from,to}
-- mail_test_errors_total{route,from,to,step}
-- mail_last_error_info{route,from,to}
-- mail_build_info{version,revision,build_date} = 1  # version/build metadata exposed for observability
+# Mail E2E Exporter – Exposed Metrics
 
-Config and mapping gauges:
-- mail_test_info{route,from,to} = 1 (maps configured tests)
-- mail_config_delete_testmail_after_verify
-- mail_config_receive_timeout_seconds
-- mail_config_receive_poll_seconds
-- mail_config_check_interval_seconds
+| Metric | Type | Description |
+|--------|------|-------------|
+| `mail_e2e_exporter_send_success{from,to,route}` | `gauge` | `1` if SMTP send succeeded, else `0`. |
+| `mail_e2e_exporter_receive_success{from,to,route}` | `gauge` | `1` if IMAP receive succeeded, else `0`. |
+| `mail_e2e_exporter_roundtrip_seconds{from,to,route}` | `gauge` | Time in seconds from send to receive. |
+| `mail_e2e_exporter_last_send_timestamp{from,to,route}` | `gauge` | Unix timestamp of the last send attempt. |
+| `mail_e2e_exporter_last_receive_timestamp{from,to,route}` | `gauge` | Unix timestamp of the last received test mail. |
+| `mail_e2e_exporter_test_errors_total{from,to,route,step}` | `counter` | Total errors, labeled by step (`send`, `receive`). |
+| `mail_e2e_exporter_test_errors_created{from,to,route,step}` | `gauge` | Timestamp when each error counter was created. |
+| `mail_e2e_exporter_last_error_info{from,to,route}` | `gauge` | Encoded hash of last error (0 = no error). |
+| `mail_e2e_exporter_build_info{version,revision,build_date}` | `gauge` | Version and build metadata (`= 1`). |
+| `mail_e2e_exporter_config_delete_testmail_after_verify` | `gauge` | `1` if test mails are deleted after success. |
+| `mail_e2e_exporter_config_receive_timeout_seconds` | `gauge` | Configured receive timeout. |
+| `mail_e2e_exporter_config_receive_poll_seconds` | `gauge` | Configured IMAP polling interval. |
+| `mail_e2e_exporter_config_check_interval_seconds` | `gauge` | Configured full check interval. |
+| `mail_e2e_exporter_test_info{from,to,route}` | `gauge` | Always `1`; maps configured routes for observability. |
+
 
 Note: The actual metric names will use whatever exporter.metrics_prefix is set to at import time (can be "" for no prefix).
 
