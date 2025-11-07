@@ -1,7 +1,7 @@
 variables:
   GIT_DEPTH: 1
   GIT_CLONE_PATH: $CI_BUILDS_DIR/$CI_PROJECT_PATH/$CI_ENVIRONMENT_SLUG
-  GIT_CLEAN_FLAGS: -ffdx -e .env -e config.yaml
+  GIT_CLEAN_FLAGS: -ffdx -e .env -e config.yaml -e docker-compose.yml -e docker-compose.yaml
 
 stages:
   - prepare
