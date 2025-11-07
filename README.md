@@ -180,5 +180,15 @@ Import in Grafana:
   ```
 - Exposed port is parameterized via MAIL_E2E_EXPORTER_PORT (defaults to 9782).
 
+## Links
+- [DockerHub](https://hub.docker.com/r/bjoernramos/mail-e2e-exporter)
+- [GitHub](https://github.com/bjoernramos/Mail-E2E-Exporter)
+- [Read the Docs]()
+- [Twitter](https://x.com/bjoern_rms)
+- [Gravatar](https://gravatar.com/blueada89f5864b)
+- [BlueSky](https://bsky.app/profile/bjoernramos.bsky.social)
+- [LinkedIn](https://www.linkedin.com/in/björn-ramos-166b59167/)
+- [Instagram](https://www.instagram.com/bjoern.rms/)
+
 ## License
 Licensed under CC BY-NC 4.0. Free for private and internal (non-commercial) use. Attribution required: © 2025 Bjørn Ramos.
