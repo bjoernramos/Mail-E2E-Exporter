@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="https://raw.githubusercontent.com/bjoernramos/Mail-E2E-Exporter/main/assets/icon.png" width="160" alt="Mail E2E Exporter Icon">
+</p>
+
 ![License: CC BY-NC 4.0](https://img.shields.io/badge/license-CC--BY--NC--4.0-blue) ![GitHub Stars](https://img.shields.io/github/stars/bjoernramos/Mail-E2E-Exporter?style=social)
 
 ![Docker Pulls](https://img.shields.io/docker/pulls/bjoernramos/mail-e2e-exporter)
