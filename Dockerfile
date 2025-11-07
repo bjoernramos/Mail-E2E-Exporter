@@ -4,14 +4,12 @@ FROM python:3.12-slim
 
 # Build args for version metadata (can be overridden at build time)
 ARG VERSION="0.2.1"
-ARG VCS_REF=""
-ARG BUILD_DATE=""
+ARG BUILD_DATE="2025-11-07"
 
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     UVICORN_WORKERS=1 \
     APP_VERSION=${VERSION} \
-    GIT_SHA=${VCS_REF} \
     BUILD_DATE=${BUILD_DATE}
 
 # OCI labels for GitHub/Docker Hub
@@ -20,7 +18,6 @@ LABEL org.opencontainers.image.title="Mail E2E Exporter" \
       org.opencontainers.image.url="https://github.com/bjoernramos/Mail-E2E-Exporter" \
       org.opencontainers.image.source="https://github.com/bjoernramos/Mail-E2E-Exporter" \
       org.opencontainers.image.version="${VERSION}" \
-      org.opencontainers.image.revision="${VCS_REF}" \
       org.opencontainers.image.created="${BUILD_DATE}" \
       org.opencontainers.image.licenses="CC-BY-NC-4.0"
 
