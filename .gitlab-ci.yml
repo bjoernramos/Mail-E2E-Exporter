@@ -19,8 +19,6 @@ prepare-job:
   script:
     - whoami
     - echo $HOME
-  tags:
-    - deploy
   only:
     - main
     - master
@@ -32,8 +30,6 @@ build-job:
   script:
     - docker compose build
     #- docker compose build --no-cache
-  tags:
-    - deploy
   only:
     - main
     - master
@@ -44,8 +40,6 @@ down-job:
   needs: ["build-job"]
   script:
     - docker compose down
-  tags:
-    - deploy
   only:
     - main
     - master
@@ -56,8 +50,6 @@ up-job:
   needs: ["down-job"]
   script:
     - docker compose up -d
-  tags:
-    - deploy
   only:
     - main
     - master
