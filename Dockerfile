@@ -3,7 +3,7 @@
 FROM python:3.12-slim
 
 # Build args for version metadata (can be overridden at build time)
-ARG VERSION="0.2.1"
+ARG VERSION="0.3.2"
 ARG BUILD_DATE="2025-11-07"
 
 ENV PYTHONUNBUFFERED=1 \
