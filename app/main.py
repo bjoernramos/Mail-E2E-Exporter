@@ -110,6 +110,10 @@ c_errors = Counter(f"{METRICS_PREFIX}test_errors_total", "Errors total labeled b
 
 g_last_error = Gauge(f"{METRICS_PREFIX}last_error_info", "hash of last error info (label value)", ["route", "from", "to"], registry=registry)
 
+# Build info metric to expose app version in Prometheus
+# Labels follow common conventions: version (semver/tag), revision (git sha), build_date (ISO8601)
+g_build_info = Gauge(f"{METRICS_PREFIX}build_info", "Build and version information for the exporter", ["version", "revision", "build_date"], registry=registry)
+
 # Exporter config metrics (singletons)
 g_cfg_delete = Gauge(f"{METRICS_PREFIX}config_delete_testmail_after_verify", "1 if exporter.delete_testmail_after_verify else 0", [], registry=registry)
 
@@ -159,7 +163,12 @@ logger.addHandler(_handler)
 logger.setLevel(logging.DEBUG if DEBUG else logging.INFO)
 logger.propagate = False
 
-app = FastAPI(title="Mail E2E Exporter", version="0.2.1")
+# ---------- Version/build metadata ----------
+APP_VERSION = os.environ.get("APP_VERSION", "0.2.1")
+GIT_SHA = os.environ.get("GIT_SHA", "")
+BUILD_DATE = os.environ.get("BUILD_DATE", "")
+
+app = FastAPI(title="Mail E2E Exporter", version=APP_VERSION)
 
 
 # ---------- Utils ----------
@@ -372,6 +381,11 @@ def info(_=Depends(require_api_key)):
         size = None
     return {
         "project": "mail-e2e-exporter",
+        "version": {
+            "app": APP_VERSION,
+            "revision": GIT_SHA,
+            "build_date": BUILD_DATE,
+        },
         "debug": DEBUG,
         "config": {
             "path": CONFIG_PATH,
@@ -387,6 +401,11 @@ def info(_=Depends(require_api_key)):
 def metrics(_=Depends(require_metrics_basic_auth)):
     output = generate_latest(registry)
     return PlainTextResponse(content=output, media_type=CONTENT_TYPE_LATEST)
+
+
+@app.get("/version")
+def version_endpoint(_=Depends(require_api_key)):
+    return {"app": APP_VERSION, "revision": GIT_SHA, "build_date": BUILD_DATE}
 
 
 @app.post("/reload")
@@ -499,7 +518,12 @@ def run_tests_loop():
 
 @app.on_event("startup")
 def on_startup():
-    logger.info(f"Starting Mail E2E Exporter v0.2.0 DEBUG={DEBUG}")
+    logger.info(f"Starting Mail E2E Exporter v{APP_VERSION} rev={GIT_SHA or 'n/a'} build_date={BUILD_DATE or 'n/a'} DEBUG={DEBUG}")
+    # Set build info metric
+    try:
+        g_build_info.labels(version=APP_VERSION, revision=GIT_SHA or "", build_date=BUILD_DATE or "").set(1)
+    except Exception:
+        pass
     # Initialize and log config state on startup
     _reload_config_if_changed(force=True)
     t = threading.Thread(target=run_tests_loop, daemon=True)
