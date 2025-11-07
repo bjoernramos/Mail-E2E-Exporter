@@ -2,8 +2,6 @@
 
 Ein Prometheus‑kompatibler Exporter, der den realen E2E‑Pfad von E‑Mails überwacht: Versand per SMTP und Empfang per IMAP. Für jede Route wird eine Test‑Mail mit Token im Betreff verschickt, der Eingang wird gesucht, die Roundtrip‑Zeit gemessen und als Metriken exponiert.
 
-Projekt‑Spezifikation: `../advanced.json`
-
 ## Systemanforderungen
 - Docker und Docker Compose v2
 - Ausgehender Zugriff vom Container auf die Mail‑Provider (SMTP/IMAP‑Ports)
@@ -15,7 +13,7 @@ Projekt‑Spezifikation: `../advanced.json`
 ### 1) Projekt klonen und env anlegen
 
    ```
-    cp mail-e2e-exporter/.env.example mail-e2e-exporter/.env
+    cp .env.example .env
    ```
 
    - `METRICS_USER/METRICS_PASS` setzen (für geschützte /metrics)
@@ -25,7 +23,7 @@ Projekt‑Spezifikation: `../advanced.json`
 ### 2) Konfiguration vorbereiten
 
    ```
-   cp mail-e2e-exporter/config.example.yaml mail-e2e-exporter/config.yaml
+   cp config.example.yaml config.yaml
    ```
    - Accounts (SMTP/IMAP) und Tests anpassen
    - Passwörter per Env‑Var referenzieren, z. B. ${CUSTOMDOMAIN_TEST_IMAP_PASS}
