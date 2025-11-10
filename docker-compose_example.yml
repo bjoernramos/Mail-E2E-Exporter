@@ -1,22 +1,41 @@
 services:
   mail-e2e-exporter:
-    build: ./
+    image: bjoernramos/mail-e2e-exporter:latest
     container_name: mail-e2e-exporter
-    env_file:
-      - .env
-    restart: unless-stopped
     ports:
       - "${MAIL_E2E_EXPORTER_PORT:-9782}:9782"
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro  # Read-only mount
+      - ./logs:/app/logs  # Für eventuelle Log-Dateien
+    env_file:
+      - .env
+    environment:
+      - UVICORN_WORKERS=1
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9782/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.5'
+        reservations:
+          memory: 128M
+          cpus: '0.1'
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     networks:
       - monitoring
-    volumes:
-      - ./config.yaml:/app/config.yaml:ro
-
 
 networks:
   monitoring:
     external: true
     name: monitoring_monitoring
-
-volumes:
-  mariadb_data: {}
