@@ -3,8 +3,8 @@
 FROM python:3.12-slim
 
 # Build args for version metadata (can be overridden at build time)
-ARG VERSION="0.3.4"
-ARG BUILD_DATE="2025-11-07"
+ARG VERSION="0.3.7"
+ARG BUILD_DATE="2025-11-10"
 
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
@@ -35,8 +35,8 @@ COPY app/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
 # Copy application
-COPY app /app
+COPY app /app/app
 
 EXPOSE 9782
 
-CMD ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "9782"]
+CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "9782"]
