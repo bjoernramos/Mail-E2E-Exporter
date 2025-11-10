@@ -1,4 +1,4 @@
 /.env
 /config.yaml
 /docker-compose.yaml
-.junie/*
+./junie/*
