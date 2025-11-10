@@ -1,4 +1,5 @@
 /.env
 /config.yaml
 /docker-compose.yaml
-.idea/workspace.xml
+.idea/*
+/release.sh
