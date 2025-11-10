@@ -69,10 +69,28 @@ def imap_wait_receive(route_name: str, dst_key: str, subject_token: str, config_
                 g_roundtrip.labels(route=route_name, **{"from": "?", "to": dst_key}).set(time.time() - start_ts)
                 if bool(config_exporter.get("delete_testmail_after_verify", True)):
                     try:
-                        client.add_flags(found_msgs, ["\\Deleted"])  # escape backslash
-                        client.expunge()
+                        # Try provider-specific safe delete: Gmail prefers moving to Trash over \Deleted/EXPUNGE
+                        if "gmail.com" in host_lc or host_lc.endswith("googlemail.com"):
+                            trash_candidates = ["[Gmail]/Trash", "[Google Mail]/Trash"]
+                            moved = False
+                            for trash in trash_candidates:
+                                try:
+                                    client.move_messages(found_msgs, trash)
+                                    logger.debug(f"[{route_name}] moved {len(found_msgs)} msg(s) from '{found_folder}' to '{trash}'")
+                                    moved = True
+                                    break
+                                except Exception as me:
+                                    logger.debug(f"[{route_name}] move to '{trash}' failed: {me}")
+                            if not moved:
+                                # Fallback to \Deleted + EXPUNGE if move didn't work
+                                client.add_flags(found_msgs, ["\\Deleted"])  # escape backslash
+                                client.expunge()
+                        else:
+                            # Generic IMAP delete
+                            client.add_flags(found_msgs, ["\\Deleted"])  # escape backslash
+                            client.expunge()
                     except Exception as de:
-                        logger.debug(f"[{route_name}] delete/expunge failed in '{found_folder}': {de}")
+                        logger.debug(f"[{route_name}] delete/move failed in '{found_folder}': {de}")
                 return {"ok": True, "count": len(found_msgs), "folder": found_folder}
 
             if (time.time() - start_ts) > timeout_s:
