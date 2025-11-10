@@ -95,10 +95,15 @@ Note: docker-compose.yaml mounts ./config.yaml read-only to /app/config.yaml. Fi
   - delete_testmail_after_verify: delete matched messages after verification (default true)
   - subject_prefix: subject prefix for outbound test messages (default "[MAIL-E2E]")
   - metrics_prefix: prefix for Prometheus metric names (default "mail_"). IMPORTANT: the registry and names are created at import time; adjust before app import/container start.
-- accounts: map of logical account keys. For each key provide smtp and/or imap blocks. Values support environment expansion ($VAR or ${VAR}).
-  - smtp: host, port, starttls (default true), username, password
-  - imap: host, port, ssl (default true), username, password, folder (default INBOX), extra_folders (string or list)
-- tests: list of routes, each with name (optional), from (account key), to (account key)
+  - smtp_timeout_seconds: global SMTP timeout (seconds) used if per-account smtp.timeout_seconds is not set (default 60)
+  - uncertain_probe_on_timeout: if true, on SMTP timeout/disconnect the exporter optionally probes IMAP briefly
+  - uncertain_probe_timeout_seconds / uncertain_probe_poll_seconds: limits for the optional probe
+  - min_smtp_interval_seconds: optional minimal spacing between two sends per source account (seconds); helps avoid provider rate limits (default 0 = disabled)
+  - send_jitter_max_seconds: optional random delay added before sending to de-sync bursts (default 0 = disabled)
+  - accounts: map of logical account keys. For each key provide smtp and/or imap blocks. Values support environment expansion ($VAR or ${VAR}).
+    - smtp: host, port, starttls (default true), username, password, timeout_seconds (optional)
+    - imap: host, port, ssl (default true), username, password, folder (default INBOX), extra_folders (string or list)
+  - tests: list of routes, each with name (optional), from (account key), to (account key)
 
 Gmail specifics: the IMAP search will try common Gmail labels (All Mail/Spam/Important in EN/DE variants) and prefers X-GM-RAW when available. You can also add imap.extra_folders for custom labels and adjust receive_timeout_seconds if needed.
 
@@ -165,6 +170,7 @@ Assuming metrics_prefix = "mail_e2e_exporter_" (default). All core series have l
 | `mail_e2e_exporter_receive_attempted{from,to,route}` | `gauge` | `1` if the receive phase was attempted in the current cycle. |
 | `mail_e2e_exporter_receive_skipped{from,to,route}` | `gauge` | `1` if the receive phase was skipped due to send failure. |
 | `mail_e2e_exporter_send_uncertain{from,to,route}` | `gauge` | `1` if send failed due to timeout/disconnect after DATA; exporter may run a short IMAP probe. |
+| `mail_e2e_exporter_send_rate_limited_total{from,to,route,code}` | `counter` | Count of SMTP temporary failures (4xx like 451) during send; includes the server reply code. |
 | `mail_e2e_exporter_test_info{from,to,route}` | `gauge` | Always `1`; maps configured routes for observability. |
 
 

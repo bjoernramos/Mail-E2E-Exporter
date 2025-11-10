@@ -15,6 +15,10 @@ exporter:
   uncertain_probe_on_timeout: true
   uncertain_probe_timeout_seconds: 12
   uncertain_probe_poll_seconds: 4
+  # Optional: Minimaler Abstand zwischen zwei Sends pro Absender (Sekunden)
+  min_smtp_interval_seconds: 0
+  # Optional: Zufalls-Jitter vor dem Senden (Sekunden), um Bursts zu vermeiden
+  send_jitter_max_seconds: 0
 
 accounts:
   # Example accounts (fill passwords via environment variables referenced here or inline for local tests)

@@ -5,6 +5,7 @@ import threading
 import logging
 import uuid
 from typing import Dict, Any, Optional, List
+import random
 
 from fastapi import FastAPI, Depends, HTTPException, status, Request
 from fastapi.responses import PlainTextResponse, JSONResponse
@@ -39,6 +40,10 @@ DEFAULTS = {
         # Optional: short probe limits
         "uncertain_probe_timeout_seconds": 12,
         "uncertain_probe_poll_seconds": 4,
+        # Optional: throttle per source account to avoid provider rate limits
+        "min_smtp_interval_seconds": 0,
+        # Optional: add small random delay before send to de-sync bursts
+        "send_jitter_max_seconds": 0,
     },
     "accounts": {},
     "tests": [],
@@ -143,6 +148,14 @@ g_recv_skipped = Gauge(f"{METRICS_PREFIX}receive_skipped", "1 if receive was ski
 
 #gauge indicating send uncertainty (timeout after DATA / late 250)
 g_send_uncertain = Gauge(f"{METRICS_PREFIX}send_uncertain", "1 if send result is uncertain (timeout/disconnect likely after DATA)", ["route", "from", "to"], registry=registry)
+
+# Counter for 4xx temporary SMTP failures (e.g., 451 rate limiting)
+c_rate_limited = Counter(
+    f"{METRICS_PREFIX}send_rate_limited_total",
+    "SMTP temporary failures (4xx) during send; labeled by route, from, to, and server reply code",
+    ["route", "from", "to", "code"],
+    registry=registry,
+)
 
 
 # ---------- Auth helpers ----------
@@ -278,10 +291,10 @@ def _smtp_send(route_name: str, src_key: str, dst_key: str, subject: str, body: 
             timeout=timeout_s,
         )
 
-    # Retry on timeout-like errors exactly once
+    # Retry on timeout-like errors and 4xx temporary responses (e.g., 451)
     from aiosmtplib import errors as smtp_errors
     attempts = 0
-    max_attempts = 2
+    max_attempts = 3
     last_exc = None
     t0 = time.time()
     while attempts < max_attempts:
@@ -295,6 +308,7 @@ def _smtp_send(route_name: str, src_key: str, dst_key: str, subject: str, body: 
         except (TimeoutError, smtp_errors.SMTPTimeoutError, smtp_errors.SMTPServerDisconnected) as e:  # type: ignore[attr-defined]
             last_exc = e
             if attempts < max_attempts:
+                # short backoff (2-5s) on timeout/disconnect
                 backoff = min(5, max(2, eff_timeout // 20))
                 logger.warning(f"[{route_name}] SMTP timeout/disconnect on attempt {attempts}, retrying in {backoff}s... host={host} port={port} starttls={starttls} use_tls={use_tls}")
                 time.sleep(backoff)
@@ -304,8 +318,29 @@ def _smtp_send(route_name: str, src_key: str, dst_key: str, subject: str, body: 
                 logger.error(f"[{route_name}] SMTP failed after {attempts} attempts due to timeout/disconnect (elapsed={elapsed:.2f}s): {e}")
                 # Raise a special error so caller may run an 'uncertain' probe
                 raise SMTPUncertainError(str(e))
+        except smtp_errors.SMTPResponseException as e:  # type: ignore[attr-defined]
+            last_exc = e
+            code = getattr(e, "code", 0) or 0
+            # Treat 4xx as temporary: retry with exponential backoff + jitter
+            if 400 <= int(code) < 500:
+                try:
+                    c_rate_limited.labels(route=route_name, **{"from": src_key, "to": dst_key}, code=str(code)).inc()
+                except Exception:
+                    pass
+                if attempts < max_attempts:
+                    exp = attempts - 1
+                    base = 3 * (2 ** exp)
+                    backoff = min(30, base) + random.uniform(0, 1.5)
+                    logger.warning(f"[{route_name}] SMTP {code} temporary failure on attempt {attempts}: {e}. Retrying in {backoff:.1f}s")
+                    time.sleep(backoff)
+                    continue
+                else:
+                    logger.error(f"[{route_name}] SMTP temporary failure persisted after {attempts} attempts: {e}")
+                    raise
+            # 5xx or others: permanent failure, do not retry
+            raise
         except Exception as e:
-            # Non-timeout errors: do not retry
+            # Non-timeout/non-4xx: do not retry
             last_exc = e
             logger.error(f"[{route_name}] SMTP send failed (non-timeout) on attempt {attempts}: {e}")
             raise
@@ -587,6 +622,8 @@ def reload_config(_=Depends(require_api_key)):
 
 # ---------- Background test runner (real flow) ----------
 stop_event = threading.Event()
+# Track last SMTP send per source account to provide optional min-interval throttling
+_last_smtp_send_at: Dict[str, float] = {}
 
 
 def run_tests_loop():
@@ -665,10 +702,29 @@ def run_tests_loop():
                 except Exception:
                     pass
 
+                # Optional jitter before sending to de-sync multiple routes
+                jitter_max = float(exporter_cfg.get("send_jitter_max_seconds", DEFAULTS["exporter"]["send_jitter_max_seconds"]))
+                if jitter_max and jitter_max > 0:
+                    jitter = random.uniform(0, jitter_max)
+                    logger.debug(f"[{route}] Applying send jitter of {jitter:.2f}s (max {jitter_max}s)")
+                    time.sleep(jitter)
+
+                # Optional per-source min interval throttling
+                min_iv = float(exporter_cfg.get("min_smtp_interval_seconds", DEFAULTS["exporter"]["min_smtp_interval_seconds"]))
+                if min_iv and min_iv > 0:
+                    last_at = _last_smtp_send_at.get(src)
+                    now_ts = time.time()
+                    if last_at is not None:
+                        wait_for = (last_at + min_iv) - now_ts
+                        if wait_for > 0:
+                            logger.debug(f"[{route}] Respecting min_smtp_interval_seconds={min_iv}s for source '{src}'; sleeping {wait_for:.2f}s")
+                            time.sleep(wait_for)
+
                 try:
                     _smtp_send(route, src, dst, subject, body)
                     g_send_ok.labels(route=route, **{"from": src, "to": dst}).set(1)
                     logger.debug(f"[{route}] SMTP send ok to route {dst}")
+                    _last_smtp_send_at[src] = time.time()
                 except SMTPUncertainError as ue:
                     g_send_ok.labels(route=route, **{"from": src, "to": dst}).set(0)
                     g_send_uncertain.labels(route=route, **{"from": src, "to": dst}).set(1)
@@ -697,6 +753,7 @@ def run_tests_loop():
                     except Exception as pe:
                         logger.debug(f"[{route}] Probe error or disabled: {pe}")
                         g_recv_skipped.labels(route=route, **{"from": src, "to": dst}).set(1)
+                    _last_smtp_send_at[src] = time.time()
                     continue
                 except Exception as e:
                     g_send_ok.labels(route=route, **{"from": src, "to": dst}).set(0)
@@ -706,6 +763,7 @@ def run_tests_loop():
                     logger.error(f"[{route}] SMTP error: {e}")
                     # skip receive if send failed
                     g_recv_skipped.labels(route=route, **{"from": src, "to": dst}).set(1)
+                    _last_smtp_send_at[src] = time.time()
                     continue
 
                 # Receive phase
