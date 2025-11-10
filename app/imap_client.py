@@ -75,10 +75,22 @@ def imap_wait_receive(route_name: str, dst_key: str, subject_token: str, config_
                             moved = False
                             for trash in trash_candidates:
                                 try:
-                                    client.move_messages(found_msgs, trash)
+                                    # IMAPClient provides .move(); older code used a non-existent .move_messages
+                                    client.move(found_msgs, trash)
                                     logger.debug(f"[{route_name}] moved {len(found_msgs)} msg(s) from '{found_folder}' to '{trash}'")
                                     moved = True
                                     break
+                                except AttributeError:
+                                    # Fallback for environments where .move() may be unavailable: COPY + delete + expunge
+                                    try:
+                                        client.copy(found_msgs, trash)
+                                        client.add_flags(found_msgs, ["\\Deleted"])  # escape backslash
+                                        client.expunge()
+                                        logger.debug(f"[{route_name}] copied {len(found_msgs)} msg(s) from '{found_folder}' to '{trash}' then deleted originals")
+                                        moved = True
+                                        break
+                                    except Exception as me2:
+                                        logger.debug(f"[{route_name}] copy+delete to '{trash}' failed: {me2}")
                                 except Exception as me:
                                     logger.debug(f"[{route_name}] move to '{trash}' failed: {me}")
                             if not moved:
