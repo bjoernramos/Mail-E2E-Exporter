@@ -1,5 +1,4 @@
 /.env
 /config.yaml
 /docker-compose.yaml
-.idea/*
-
+.idea/workspace.xml
