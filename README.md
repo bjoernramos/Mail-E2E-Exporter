@@ -161,6 +161,10 @@ Assuming metrics_prefix = "mail_e2e_exporter_" (default). All core series have l
 | `mail_e2e_exporter_config_receive_timeout_seconds` | `gauge` | Configured receive timeout. |
 | `mail_e2e_exporter_config_receive_poll_seconds` | `gauge` | Configured IMAP polling interval. |
 | `mail_e2e_exporter_config_check_interval_seconds` | `gauge` | Configured full check interval. |
+| `mail_e2e_exporter_config_smtp_timeout_seconds` | `gauge` | Configured SMTP timeout (effective). |
+| `mail_e2e_exporter_receive_attempted{from,to,route}` | `gauge` | `1` if the receive phase was attempted in the current cycle. |
+| `mail_e2e_exporter_receive_skipped{from,to,route}` | `gauge` | `1` if the receive phase was skipped due to send failure. |
+| `mail_e2e_exporter_send_uncertain{from,to,route}` | `gauge` | `1` if send failed due to timeout/disconnect after DATA; exporter may run a short IMAP probe. |
 | `mail_e2e_exporter_test_info{from,to,route}` | `gauge` | Always `1`; maps configured routes for observability. |
 
 

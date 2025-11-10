@@ -32,6 +32,13 @@ DEFAULTS = {
         "subject_prefix": "[MAIL-E2E]",
         # Prefix for Prometheus metric names. Examples: "mail_" (default), "custom_mail_", or "" for none
         "metrics_prefix": "mail_",
+        # Global SMTP timeout as fallback if per-account is not set
+        "smtp_timeout_seconds": 60,
+        # Optional: probe IMAP briefly on timeout to detect late delivery
+        "uncertain_probe_on_timeout": True,
+        # Optional: short probe limits
+        "uncertain_probe_timeout_seconds": 12,
+        "uncertain_probe_poll_seconds": 4,
     },
     "accounts": {},
     "tests": [],
@@ -123,8 +130,19 @@ g_cfg_receive_poll = Gauge(f"{METRICS_PREFIX}config_receive_poll_seconds", "Conf
 
 g_cfg_check_interval = Gauge(f"{METRICS_PREFIX}config_check_interval_seconds", "Configured check interval seconds", [], registry=registry)
 
+# Additional config metric (singleton)
+g_cfg_smtp_timeout = Gauge(f"{METRICS_PREFIX}config_smtp_timeout_seconds", "Configured SMTP timeout seconds (effective global or per-cycle)", [], registry=registry)
+
 # Tests mapping info metric (labels expose from/to for each route)
 g_test_info = Gauge(f"{METRICS_PREFIX}test_info", "Info metric mapping each test route to from/to accounts (always 1)", ["route", "from", "to"], registry=registry)
+
+# Receive attempt/skip and uncertain send indicators
+g_recv_attempted = Gauge(f"{METRICS_PREFIX}receive_attempted", "1 if receive was attempted in the current cycle; else 0", ["route", "from", "to"], registry=registry)
+
+g_recv_skipped = Gauge(f"{METRICS_PREFIX}receive_skipped", "1 if receive was skipped due to send failure; else 0", ["route", "from", "to"], registry=registry)
+
+#gauge indicating send uncertainty (timeout after DATA / late 250)
+g_send_uncertain = Gauge(f"{METRICS_PREFIX}send_uncertain", "1 if send result is uncertain (timeout/disconnect likely after DATA)", ["route", "from", "to"], registry=registry)
 
 
 # ---------- Auth helpers ----------
@@ -171,6 +189,13 @@ BUILD_DATE = os.environ.get("BUILD_DATE", "")
 app = FastAPI(title="Mail E2E Exporter", version=APP_VERSION)
 
 
+# ---------- Custom exceptions ----------
+class SMTPUncertainError(Exception):
+    """Raised when SMTP send likely succeeded server-side but client timed out or disconnected (post-DATA).
+    We treat this as an uncertain send for optional probing.
+    """
+    pass
+
 # ---------- Utils ----------
 
 def _expand_env_value(val: Any) -> Any:
@@ -199,6 +224,9 @@ def _smtp_send(route_name: str, src_key: str, dst_key: str, subject: str, body: 
     starttls = bool(smtp.get("starttls", True))
     username = smtp.get("username")
     password = smtp.get("password")
+    # Effective SMTP timeout resolution: per-account → global → default
+    exporter_cfg = config.data.get("exporter", {}) or {}
+    eff_timeout = int(smtp.get("timeout_seconds") or exporter_cfg.get("smtp_timeout_seconds") or DEFAULTS["exporter"]["smtp_timeout_seconds"])
 
     # Env hint for SMTP password if unresolved
     raw_acc = config.data.get("accounts", {}).get(src_key, {}) or {}
@@ -238,8 +266,8 @@ def _smtp_send(route_name: str, src_key: str, dst_key: str, subject: str, body: 
     # Use asyncio.run in a short-lived event loop per call to keep background thread simple.
     import asyncio
 
-    async def _send_async():
-        await aiosmtplib.send(
+    async def _send_async(timeout_s: int):
+        return await aiosmtplib.send(
             msg,
             hostname=host,
             port=port,
@@ -247,14 +275,44 @@ def _smtp_send(route_name: str, src_key: str, dst_key: str, subject: str, body: 
             use_tls=use_tls,
             username=username,
             password=password,
-            timeout=30,
+            timeout=timeout_s,
         )
 
-    try:
-        asyncio.run(_send_async())
-    except Exception as e:
-        logger.error(f"[{route_name}] SMTP send failed (user={username} host={host} port={port} starttls={starttls}): {e}")
-        raise
+    # Retry on timeout-like errors exactly once
+    from aiosmtplib import errors as smtp_errors
+    attempts = 0
+    max_attempts = 2
+    last_exc = None
+    t0 = time.time()
+    while attempts < max_attempts:
+        attempts += 1
+        try:
+            logger.debug(f"[{route_name}] SMTP send attempt {attempts}/{max_attempts} timeout={eff_timeout}s")
+            asyncio.run(_send_async(eff_timeout))
+            elapsed = time.time() - t0
+            logger.debug(f"[{route_name}] SMTP send ok (attempt {attempts}) elapsed={elapsed:.2f}s")
+            return
+        except (TimeoutError, smtp_errors.SMTPTimeoutError, smtp_errors.SMTPServerDisconnected) as e:  # type: ignore[attr-defined]
+            last_exc = e
+            if attempts < max_attempts:
+                backoff = min(5, max(2, eff_timeout // 20))
+                logger.warning(f"[{route_name}] SMTP timeout/disconnect on attempt {attempts}, retrying in {backoff}s... host={host} port={port} starttls={starttls} use_tls={use_tls}")
+                time.sleep(backoff)
+                continue
+            else:
+                elapsed = time.time() - t0
+                logger.error(f"[{route_name}] SMTP failed after {attempts} attempts due to timeout/disconnect (elapsed={elapsed:.2f}s): {e}")
+                # Raise a special error so caller may run an 'uncertain' probe
+                raise SMTPUncertainError(str(e))
+        except Exception as e:
+            # Non-timeout errors: do not retry
+            last_exc = e
+            logger.error(f"[{route_name}] SMTP send failed (non-timeout) on attempt {attempts}: {e}")
+            raise
+
+    # If we get here, re-raise last exception as a safeguard
+    if last_exc:
+        raise last_exc
 
 
 def _imap_wait_receive(route_name: str, dst_key: str, subject_token: str, config_exporter: Dict[str, Any]) -> bool:
@@ -544,6 +602,7 @@ def run_tests_loop():
             g_cfg_receive_timeout.set(float(exporter_cfg.get("receive_timeout_seconds", DEFAULTS["exporter"]["receive_timeout_seconds"])))
             g_cfg_receive_poll.set(float(exporter_cfg.get("receive_poll_seconds", DEFAULTS["exporter"]["receive_poll_seconds"])))
             g_cfg_check_interval.set(float(exporter_cfg.get("check_interval_seconds", DEFAULTS["exporter"]["check_interval_seconds"])))
+            g_cfg_smtp_timeout.set(float(exporter_cfg.get("smtp_timeout_seconds", DEFAULTS["exporter"]["smtp_timeout_seconds"])))
         except Exception:
             pass
         # reset and publish test_info for all tests
@@ -561,6 +620,10 @@ def run_tests_loop():
             g_roundtrip.labels(route=route, **{"from": src, "to": dst}).set(0)
             g_last_send.labels(route=route, **{"from": src, "to": dst}).set(now)
             g_last_recv.labels(route=route, **{"from": src, "to": dst}).set(now)
+            # Initialize new gauges
+            g_recv_attempted.labels(route=route, **{"from": src, "to": dst}).set(0)
+            g_recv_skipped.labels(route=route, **{"from": src, "to": dst}).set(0)
+            g_send_uncertain.labels(route=route, **{"from": src, "to": dst}).set(0)
         else:
             for t in tests:
                 src = t.get("from")
@@ -578,6 +641,14 @@ def run_tests_loop():
                     c_errors.labels(route=route, **{"from": src or "", "to": dst or ""}, step="config").inc()
                     logger.error(f"[{route}] Missing from/to in test config")
                     continue
+
+                # Reset per-cycle receive state to avoid stale values
+                g_recv_ok.labels(route=route, **{"from": src, "to": dst}).set(0)
+                g_roundtrip.labels(route=route, **{"from": src, "to": dst}).set(0)
+                g_recv_attempted.labels(route=route, **{"from": src, "to": dst}).set(0)
+                g_recv_skipped.labels(route=route, **{"from": src, "to": dst}).set(0)
+                g_send_uncertain.labels(route=route, **{"from": src, "to": dst}).set(0)
+
                 unique = uuid.uuid4().hex[:12]
                 subject_token = f"E2E-{unique}"
                 subject = f"{subj_prefix} {route} {subject_token}"
@@ -585,10 +656,48 @@ def run_tests_loop():
 
                 start = time.time()
                 g_last_send.labels(route=route, **{"from": src, "to": dst}).set(start)
+
+                # Determine effective SMTP timeout for config metric visibility (per account/global)
+                try:
+                    acc_src = _get_account(src)
+                    eff_timeout = int((acc_src.get("smtp", {}) or {}).get("timeout_seconds") or exporter_cfg.get("smtp_timeout_seconds") or DEFAULTS["exporter"]["smtp_timeout_seconds"])
+                    g_cfg_smtp_timeout.set(float(eff_timeout))
+                except Exception:
+                    pass
+
                 try:
                     _smtp_send(route, src, dst, subject, body)
                     g_send_ok.labels(route=route, **{"from": src, "to": dst}).set(1)
                     logger.debug(f"[{route}] SMTP send ok to route {dst}")
+                except SMTPUncertainError as ue:
+                    g_send_ok.labels(route=route, **{"from": src, "to": dst}).set(0)
+                    g_send_uncertain.labels(route=route, **{"from": src, "to": dst}).set(1)
+                    c_errors.labels(route=route, **{"from": src, "to": dst}, step="send").inc()
+                    h = hashlib.md5(str(ue).encode()).hexdigest()
+                    g_last_error.labels(route=route, **{"from": src, "to": dst}).set(float(int(h, 16) % 1_000_000))
+                    logger.warning(f"[{route}] SMTP uncertain send (timeout/disconnect). Considering short IMAP probe: {ue}")
+                    # Optional short probe controlled by exporter flags
+                    try:
+                        if bool(exporter_cfg.get("uncertain_probe_on_timeout", DEFAULTS["exporter"]["uncertain_probe_on_timeout"])):
+                            probe_cfg = dict(exporter_cfg)
+                            probe_cfg["receive_timeout_seconds"] = int(exporter_cfg.get("uncertain_probe_timeout_seconds", DEFAULTS["exporter"]["uncertain_probe_timeout_seconds"]))
+                            probe_cfg["receive_poll_seconds"] = int(exporter_cfg.get("uncertain_probe_poll_seconds", DEFAULTS["exporter"]["uncertain_probe_poll_seconds"]))
+                            g_recv_attempted.labels(route=route, **{"from": src, "to": dst}).set(1)
+                            received = _imap_wait_receive(route, dst, subject_token, probe_cfg)
+                            if received:
+                                endp = time.time()
+                                g_last_recv.labels(route=route, **{"from": src, "to": dst}).set(endp)
+                                logger.warning(f"[{route}] IMAP probe found message despite SMTP timeout. Marking send_uncertain=1, receive_success remains 1 only for probe visibility.")
+                                g_recv_ok.labels(route=route, **{"from": src, "to": dst}).set(1)
+                            else:
+                                g_recv_ok.labels(route=route, **{"from": src, "to": dst}).set(0)
+                                g_recv_skipped.labels(route=route, **{"from": src, "to": dst}).set(1)
+                        else:
+                            g_recv_skipped.labels(route=route, **{"from": src, "to": dst}).set(1)
+                    except Exception as pe:
+                        logger.debug(f"[{route}] Probe error or disabled: {pe}")
+                        g_recv_skipped.labels(route=route, **{"from": src, "to": dst}).set(1)
+                    continue
                 except Exception as e:
                     g_send_ok.labels(route=route, **{"from": src, "to": dst}).set(0)
                     c_errors.labels(route=route, **{"from": src, "to": dst}, step="send").inc()
@@ -596,8 +705,12 @@ def run_tests_loop():
                     g_last_error.labels(route=route, **{"from": src, "to": dst}).set(float(int(h, 16) % 1_000_000))
                     logger.error(f"[{route}] SMTP error: {e}")
                     # skip receive if send failed
+                    g_recv_skipped.labels(route=route, **{"from": src, "to": dst}).set(1)
                     continue
 
+                # Receive phase
+                g_recv_attempted.labels(route=route, **{"from": src, "to": dst}).set(1)
+                g_recv_skipped.labels(route=route, **{"from": src, "to": dst}).set(0)
                 try:
                     received = _imap_wait_receive(route, dst, subject_token, exporter_cfg)
                     end = time.time()

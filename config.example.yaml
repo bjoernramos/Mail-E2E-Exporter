@@ -9,6 +9,12 @@ exporter:
   # Optional: Prefix für alle Prometheus-Metriken. Default ist "mail_".
   # Beispiel: "mail_e2e_" oder "custom_mail_" oder leer "" für keinen Prefix
   metrics_prefix: "mail_e2e_exporter_"
+  # SMTP: globaler Timeout (Sekunden) als Fallback, wenn nicht pro Account gesetzt
+  smtp_timeout_seconds: 60
+  # Optional: Bei SMTP-Timeout nach DATA kurz im Zielpostfach nachsehen
+  uncertain_probe_on_timeout: true
+  uncertain_probe_timeout_seconds: 12
+  uncertain_probe_poll_seconds: 4
 
 accounts:
   # Example accounts (fill passwords via environment variables referenced here or inline for local tests)
