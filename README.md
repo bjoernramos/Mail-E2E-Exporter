@@ -18,7 +18,7 @@ If you have ideas, suggestions, or constructive criticism, please share them in 
 [![Join the discussion](https://img.shields.io/badge/Feedback-Join%20the%20discussion-blue?style=for-the-badge&logo=github)](https://github.com/bjoernramos/Mail-E2E-Exporter/discussions/2)
 [![Open an issue](https://img.shields.io/badge/Bugs%20%26%20Ideas-Open%20an%20issue-brightgreen?style=for-the-badge&logo=github)](https://github.com/bjoernramos/Mail-E2E-Exporter/issues)
 
-![Static Badge](https://img.shields.io/badge/-buy_me_a%C2%A0coffee-gray?logo=buy-me-a-coffee&link=https%3A%2F%2Fbuymeacoffee.com%2Fbjoernramos)
+[//]: # (![Static Badge]&#40;https://img.shields.io/badge/-buy_me_a%C2%A0coffee-gray?logo=buy-me-a-coffee&link=https%3A%2F%2Fbuymeacoffee.com%2Fbjoernramos&#41;)
 
 # Mail E2E Exporter
 
