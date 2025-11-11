@@ -1,10 +1,13 @@
+![GitHub Tag](https://img.shields.io/github/v/tag/bjoernramos/Mail-E2E-Exporter)
+![License: CC BY-NC 4.0](https://img.shields.io/badge/license-CC--BY--NC--4.0-blue)
+![Docker Pulls](https://img.shields.io/docker/pulls/bjoernramos/mail-e2e-exporter)
+![Docker Image Size](https://img.shields.io/docker/image-size/bjoernramos/mail-e2e-exporter)
+![GitHub repo size](https://img.shields.io/github/repo-size/bjoernramos/mail-e2e-exporter)
+![GitHub last commit (branch)](https://img.shields.io/github/last-commit/bjoernramos/Mail-E2E-Exporter/main)
+
 <p align="center">
   <img src="https://raw.githubusercontent.com/bjoernramos/Mail-E2E-Exporter/main/assets/icon.png" width="160" alt="Mail E2E Exporter Icon">
 </p>
-
-![License: CC BY-NC 4.0](https://img.shields.io/badge/license-CC--BY--NC--4.0-blue) ![GitHub Stars](https://img.shields.io/github/stars/bjoernramos/Mail-E2E-Exporter?style=social)
-
-![Docker Pulls](https://img.shields.io/docker/pulls/bjoernramos/mail-e2e-exporter)
 
 ## 💬 Feedback welcome
 
@@ -14,6 +17,8 @@ If you have ideas, suggestions, or constructive criticism, please share them in 
 
 [![Join the discussion](https://img.shields.io/badge/Feedback-Join%20the%20discussion-blue?style=for-the-badge&logo=github)](https://github.com/bjoernramos/Mail-E2E-Exporter/discussions/2)
 [![Open an issue](https://img.shields.io/badge/Bugs%20%26%20Ideas-Open%20an%20issue-brightgreen?style=for-the-badge&logo=github)](https://github.com/bjoernramos/Mail-E2E-Exporter/issues)
+
+![Static Badge](https://img.shields.io/badge/-buy_me_a%C2%A0coffee-gray?logo=buy-me-a-coffee&link=https%3A%2F%2Fbuymeacoffee.com%2Fbjoernramos)
 
 # Mail E2E Exporter
 
@@ -208,6 +213,9 @@ Import in Grafana:
 - Exposed port is parameterized via MAIL_E2E_EXPORTER_PORT (defaults to 9782).
 
 ## Links
+![Bluesky followers](https://img.shields.io/bluesky/followers/bjoernramos.bsky.social)
+![X (formerly Twitter) Follow](https://img.shields.io/twitter/follow/bjoern_rms)
+
 - [DockerHub](https://hub.docker.com/r/bjoernramos/mail-e2e-exporter)
 - [GitHub](https://github.com/bjoernramos/Mail-E2E-Exporter)
 - [Twitter](https://x.com/bjoern_rms)
